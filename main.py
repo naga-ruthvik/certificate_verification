@@ -8,6 +8,9 @@ def extract_content_from_pdf(pdf_path, output_dir="extracted_content"):
     Args:
         pdf_path (str): The file path to the PDF document.
         output_dir (str): The directory to save the extracted images.
+
+    Returns:
+        tuple: (all_text, extracted_image_paths)
     """
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
@@ -18,51 +21,58 @@ def extract_content_from_pdf(pdf_path, output_dir="extracted_content"):
     try:
         # Open the PDF file
         doc = fitz.open(pdf_path)
+        print(f"[INFO] Opened PDF: {pdf_path} with {len(doc)} pages")
 
-        for page_num in range(len(doc)):
-            page = doc.load_page(page_num)
-
+        for page_num, page in enumerate(doc, start=1):
             # --- Text Extraction ---
-            all_text += page.get_text()
+            page_text = page.get_text()
+            all_text += page_text + "\n"
 
             # --- Image Extraction ---
             image_list = page.get_images(full=True)
-            for img_index, img_info in enumerate(image_list):
-                xref = img_info[0]
-                base_image = doc.extract_image(xref)
-                image_bytes = base_image["image"]
-                image_ext = base_image["ext"]
+            if image_list:
+                print(f"[INFO] Page {page_num} has {len(image_list)} images")
+            else:
+                continue
 
-                image_filename = f"page_{page_num + 1}_image_{img_index + 1}.{image_ext}"
-                image_path = os.path.join(output_dir, image_filename)
-                
-                with open(image_path, "wb") as img_file:
-                    img_file.write(image_bytes)
-                extracted_image_paths.append(image_path)
-                print(f"[+] Saved image: {image_path}")
-        
+            for img_index, img_info in enumerate(image_list, start=1):
+                xref = img_info[0]
+                try:
+                    base_image = doc.extract_image(xref)
+                    image_bytes = base_image["image"]
+                    image_ext = base_image["ext"]
+
+                    image_filename = f"page_{page_num}_image_{img_index}.{image_ext}"
+                    image_path = os.path.join(output_dir, image_filename)
+
+                    with open(image_path, "wb") as img_file:
+                        img_file.write(image_bytes)
+                    extracted_image_paths.append(image_path)
+                    print(f"[+] Saved image: {image_path}")
+
+                except Exception as e:
+                    print(f"[WARNING] Skipping image {img_index} on page {page_num}: {e}")
+
         doc.close()
 
     except FileNotFoundError:
-        print(f"Error: The file at {pdf_path} was not found.")
+        print(f"[ERROR] File not found: {pdf_path}")
         return None, None
     except Exception as e:
-        print(f"An error occurred: {e}")
+        print(f"[ERROR] Failed to process PDF: {e}")
         return None, None
 
-    return all_text, extracted_image_paths
+    return all_text.strip(), extracted_image_paths
+
 
 # --- Example Usage ---
+pdf_document_path = "certificate_2.pdf"
 
-# Replace with the actual path to your PDF
-pdf_document_path = "certificate.pdf"
-
-# Call the extraction function
 text_content, image_paths = extract_content_from_pdf(pdf_document_path)
 
 if text_content:
     print("\n--- Extracted Text ---")
-    print(text_content)
+    print(text_content[:1000], "..." if len(text_content) > 1000 else "")
 
     print("\n--- Extracted Images Paths ---")
     for path in image_paths:
