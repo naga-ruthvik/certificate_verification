@@ -335,7 +335,7 @@ def call_llm_extract(prompt: str) -> Dict:
     Sends a prompt to the Gemini API and gets a JSON response.
     """
     import google.generativeai as genai
-    genai.configure(api_key="AIzaSyAYSg8fomuImTapCNLL40AnU1UMtLXe4kg")
+    genai.configure(api_key="")
 
     model = genai.GenerativeModel(
         # Use a model that supports JSON mode, like Gemini 1.5 Flash.
