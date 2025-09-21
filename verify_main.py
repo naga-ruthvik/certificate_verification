@@ -100,6 +100,15 @@ def verify_certificate(
     return result
 
 
+# ✅ Wrapper for Streamlit frontend
+def main(file_path: str) -> Dict:
+    """
+    Entry point for frontend.
+    The Streamlit app calls this function with the uploaded file path.
+    """
+    return verify_certificate(file_path)
+
+
 # Stand-alone test
 if __name__ == "__main__":
     # Example usage (replace with your own file/URL)
