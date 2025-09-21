@@ -65,15 +65,15 @@ def extract_content_from_pdf(pdf_path, output_dir="extracted_content"):
     return all_text.strip(), extracted_image_paths
 
 
-# --- Example Usage ---
-pdf_document_path = "certificate_2.pdf"
+# # --- Example Usage ---
+# pdf_document_path = "certificate_2.pdf"
 
-text_content, image_paths = extract_content_from_pdf(pdf_document_path)
+# text_content, image_paths = extract_content_from_pdf(pdf_document_path)
 
-if text_content:
-    print("\n--- Extracted Text ---")
-    print(text_content[:1000], "..." if len(text_content) > 1000 else "")
+# if text_content:
+#     print("\n--- Extracted Text ---")
+#     print(text_content[:1000], "..." if len(text_content) > 1000 else "")
 
-    print("\n--- Extracted Images Paths ---")
-    for path in image_paths:
-        print(path)
+#     print("\n--- Extracted Images Paths ---")
+#     for path in image_paths:
+#         print(path)

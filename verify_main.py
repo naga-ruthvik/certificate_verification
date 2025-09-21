@@ -17,7 +17,7 @@ from pprint import pprint
 
 target_url="https://archive.nptel.ac.in/content/noc/NOC24/SEM2/Ecertificates/106/noc24-cs78/Course/NPTEL24CS78S43680188002689171.pdf"
 
-pdf_document_path = "certificate_4.pdf"
+pdf_document_path = "certificate_3.pdf"
 text_content, image_paths = extract_content_from_pdf(pdf_document_path)
 
 @dataclass

@@ -263,52 +263,66 @@ def build_prompt(
     extracted_data_format = ",\n".join(field_verification_examples)
 
     # Assemble the final prompt
-    prompt = rf"""
-        You are a precise information extractor and certificate verifier. Your task is to extract specific fields from the provided content, intelligently parse the reference data string, compare the fields, and report the verification status for each one individually, while also categorizing the extracted information. **Primary Directive:** - Use ONLY the provided content from the sources. - Do NOT access the web or perform external searches. - The "Reference PDF Data" is a raw string of text from a document. You must intelligently parse this string to find values for name, date, organization, etc. - If a field cannot be found in the content or the reference data, its value must be null. **Task:** 1.  **Extract** the key fields (student name, issuing organization, completion date/duration, score/percentage) defined in the schema from the "Content to process". 2.  **Parse** the "Reference PDF Data" string to find the corresponding reference values for the same key fields. 3.  **Verify** each extracted field by comparing its value from the "Content to process" against the value parsed from the "Reference PDF Data". The key fields for verification are **name, date/duration, company/provider, and score** (if available). 4.  **Categorize** all relevant information extracted from the "Content to process" into distinct categories: `skills`, `percentage`, and `others`. 5.  **Output** your findings in a single, strict JSON format as specified below. --- **Schema to Extract and Verify:** {schema_desc} --- **Reference PDF Data (Raw text string to be parsed):** `{pdf_data}` --- **Output Format (STRICT JSON ONLY, start with `{{` and end with `}}`):** Your response MUST be a single JSON object matching this structure exactly. \`\`\`json
-        {{
-        "overall_is_verified": <boolean, true ONLY if all key fields (name, date, org, score if applicable) and the source URL are verified>,
-        "overall_reasoning": "<Provide a brief summary of the verification. If it failed, explain the primary reason(s) for the mismatch in name, date, organization, or score.>",
-        "extracted_data": {{
-        "student_name": {{
-        "is_verified": <boolean>,
-        "confidence_score": <float, only if a match is found>,
-        "reasoning": "<Explain the name verification result by comparing the extracted value against the parsed reference data.>",
-        "value": "<Extracted student name from Content or null>"
-        }},
-        "issuing_organization": {{
-        "is_verified": <boolean>,
-        "confidence_score": <float, only if a match is found>,
-        "reasoning": "<Explain the organization verification result.>",
-        "value": "<Extracted organization name from Content or null>"
-        }},
-        "completion_date": {{
-        "is_verified": <boolean>,
-        "confidence_score": <float, only if a match is found>,
-        "reasoning": "<Explain the date/duration verification result.>",
-        "value": "<Extracted date or duration (e.g., 'July-Sep 2024') or null>"
-        }},
-        "score": {{
-        "is_verified": <boolean>,
-        "confidence_score": <float, only if a match is found>,
-        "reasoning": "<Explain the score/percentage verification result. State if not applicable if no score is found in both sources.>",
-        "value": "<Extracted score/percentage or null>"
-        }}
-        }},
-        "extracted_data_categorized": {{
-        "skills": ["<List of extracted skills, e.g., 'Python', 'Machine Learning'>"],
-        "percentage": "<Extracted percentage/score as a string, e.g., '95%', or null if not found>",
-        "others": ["<List of other relevant but uncategorized details, e.g., 'Certificate ID', 'Project Title'>"]
-        }},
-        "source_url_verification": {{
-        "is_verified": <boolean>,
-        "reasoning": "<State whether the URL appears to be a verifiable source (e.g., from an official domain of the issuer) and why.>"
-        }},
-        "source_urls": {json.dumps(source_urls)}
-        }}
+    prompt = prompt = rf"""
+You are a strict certificate verification system that detects certificate forgery. 
+You will be given two pieces of text:
+1. Data extracted from an uploaded certificate (PDF).
+2. Data scraped from the official verification URL.
 
-        ```
-        ```
+Your job:
+- Parse both texts into structured fields: {{ "name", "course", "issuer", "date", "certificate_id" }} if present.
+- Compare fields strictly.
+- If a field is missing in either source, mark it as "null".
+- Do not assume or hallucinate values.
+
+Rules for verification:
+- If certificate_id exists in both sources, it must match exactly.
+- Issuer must match exactly (case-insensitive).
+- Course title must match with at least 90% similarity.
+- Name must match with at least 80% similarity (to allow for small variations like initials).
+- Date must match exactly if present.
+- If majority of critical fields (issuer + course + certificate_id + name) match, then "verified" = true. Otherwise false.
+
+Output must be ONLY in the following JSON format:
+
+{{
+    "parsed_pdf_data": {{ ... }},
+    "parsed_site_data": {{ ... }},
+    "verified": true/false,
+    "score": 0.0-1.0,
+    "reason": "Short explanation of why it was verified or rejected"
+}}
+
+Example:
+{{
+    "parsed_pdf_data": {{
+        "name": "Ruthvik Naga",
+        "course": "Cloud Computing",
+        "issuer": "NPTEL",
+        "date": "July 2024",
+        "certificate_id": "ABC123"
+    }},
+    "parsed_site_data": {{
+        "name": "Ruthvik N.",
+        "course": "Cloud Computing",
+        "issuer": "NPTEL",
+        "date": "July 2024",
+        "certificate_id": "ABC123"
+    }},
+    "verified": true,
+    "score": 0.9,
+    "reason": "All fields match with minor name variation"
+}}
+
+Now compare the following:
+
+PDF Extracted Text:
+<<<{pdf_data}>>>
+
+Scraped Website Text:
+<<<{docs}>>>
 """
+
 
     return prompt
 
@@ -321,11 +335,11 @@ def call_llm_extract(prompt: str) -> Dict:
     Sends a prompt to the Gemini API and gets a JSON response.
     """
     import google.generativeai as genai
-    genai.configure(api_key="")
+    genai.configure(api_key="AIzaSyAYSg8fomuImTapCNLL40AnU1UMtLXe4kg")
 
     model = genai.GenerativeModel(
         # Use a model that supports JSON mode, like Gemini 1.5 Flash.
-        model_name="gemini-1.5-flash-latest",
+        model_name="gemini-2.5-flash-lite",
         system_instruction="Return only valid JSON. No prose."
         )
 
@@ -333,6 +347,12 @@ def call_llm_extract(prompt: str) -> Dict:
     generation_config = {
         "temperature": 0,
         "response_mime_type": "application/json",
+        "temperature": 0.0,
+        "top_p": 0.9,
+        "top_k": 5,           
+        "max_output_tokens": 500,
+        "candidate_count": 1
+
     }
 
     # 3. The API call is `generate_content`.
@@ -348,69 +368,69 @@ def call_llm_extract(prompt: str) -> Dict:
 import json
 from pprint import pprint
 
-if __name__ == "__main__":
-    # --- 1. Define Inputs ---
+# if __name__ == "__main__":
+#     # --- 1. Define Inputs ---
     
-    # The URL of a certificate or course page to verify.
-    # Using a Coursera certificate page as a good, complex example.
-    TEST_URL = "https://archive.nptel.ac.in/content/noc/NOC24/SEM2/Ecertificates/106/noc24-cs78/Course/NPTEL24CS78S43680188002689171.pdf"
+#     # The URL of a certificate or course page to verify.
+#     # Using a Coursera certificate page as a good, complex example.
+#     TEST_URL = "https://archive.nptel.ac.in/content/noc/NOC24/SEM2/Ecertificates/106/noc24-cs78/Course/NPTEL24CS78S43680188002689171.pdf"
 
-    # This is the reference text, as if it were extracted from a PDF the user uploaded.
-    # We will check if the TEST_URL contains matching information.
-    REFERENCE_PDF_TEXT = """
-    No. of credits recommended: 2 or 3
-    To verify the certificate
-    Roll No:
-    Jul-Sep 2024
-    (8 week course)
-    Programming, Data Structures and Algorithms using Python
-    NAGA RUTHVIK
-    17.71/25
-    39.38/75
-    57
-    2068
-    NPTEL24CS78S436801880
-    """
+#     # This is the reference text, as if it were extracted from a PDF the user uploaded.
+#     # We will check if the TEST_URL contains matching information.
+#     REFERENCE_PDF_TEXT = """
+#     No. of credits recommended: 2 or 3
+#     To verify the certificate
+#     Roll No:
+#     Jul-Sep 2024
+#     (8 week course)
+#     Programming, Data Structures and Algorithms using Python
+#     NAGA RUTHVIK
+#     17.71/25
+#     39.38/75
+#     57
+#     2068
+#     NPTEL24CS78S436801880
+#     """
 
-    # Define the schema of what we want the LLM to find and verify.
-    EXTRACTION_SPEC = LLMExtractionSpec(
-        instruction="Extract certificate details and verify them against the reference text.",
-        schema={
-            "student_name": "The full name of the student who completed the course.",
-            "issuing_organization": "The name of the company that created the course (e.g., Google, IBM).",
-            "completion_date": "The month and year the course was completed.",
-            "score": "The final score or percentage achieved, if available."
-        }
-    )
+#     # Define the schema of what we want the LLM to find and verify.
+#     EXTRACTION_SPEC = LLMExtractionSpec(
+#         instruction="Extract certificate details and verify them against the reference text.",
+#         schema={
+#             "student_name": "The full name of the student who completed the course.",
+#             "issuing_organization": "The name of the company that created the course (e.g., Google, IBM).",
+#             "completion_date": "The month and year the course was completed.",
+#             "score": "The final score or percentage achieved, if available."
+#         }
+#     )
 
-    # --- 2. Run the Extraction Pipeline ---
-    print(f"[*] Starting extraction from URL: {TEST_URL}")
+#     # --- 2. Run the Extraction Pipeline ---
+#     print(f"[*] Starting extraction from URL: {TEST_URL}")
     
-    # Fetches the website content (and any linked PDFs, though this example URL has none).
-    documents = extract_from_website(TEST_URL, include_pdfs=False) # Set to False for this test
+#     # Fetches the website content (and any linked PDFs, though this example URL has none).
+#     documents = extract_from_website(TEST_URL, include_pdfs=False) # Set to False for this test
     
-    if not documents:
-        print("[!] No documents were extracted. Exiting.")
-    else:
-        print(f"[*] Extracted {len(documents)} document(s) successfully.")
-        print(f"documents: {documents}")
+#     if not documents:
+#         print("[!] No documents were extracted. Exiting.")
+#     else:
+#         print(f"[*] Extracted {len(documents)} document(s) successfully.")
+#         print(f"documents: {documents}")
         
-        # --- 3. Build the Prompt ---
-        print("[*] Building prompt for the LLM...")
-        prompt = build_prompt(
-            docs=documents,
-            spec=EXTRACTION_SPEC,
-            pdf_data=REFERENCE_PDF_TEXT
-        )
+#         # --- 3. Build the Prompt ---
+#         print("[*] Building prompt for the LLM...")
+#         prompt = build_prompt(
+#             docs=documents,
+#             spec=EXTRACTION_SPEC,
+#             pdf_data=REFERENCE_PDF_TEXT
+#         )
 
-        # Optional: Uncomment the line below to see the full prompt sent to the LLM.
-        # print(prompt)
+#         # Optional: Uncomment the line below to see the full prompt sent to the LLM.
+#         # print(prompt)
 
-        # --- 4. Call the LLM and Print Results ---
-        print("[*] Calling Gemini API for structured extraction and verification...")
-        try:
-            structured_data = call_llm_extract(prompt)
-            print("\n✅ LLM Extraction Complete. Result:")
-            pprint(structured_data)
-        except Exception as e:
-            print(f"\n❌ An error occurred while calling the LLM: {e}")
+#         # --- 4. Call the LLM and Print Results ---
+#         print("[*] Calling Gemini API for structured extraction and verification...")
+#         try:
+#             structured_data = call_llm_extract(prompt)
+#             print("\n✅ LLM Extraction Complete. Result:")
+#             pprint(structured_data)
+#         except Exception as e:
+#             print(f"\n❌ An error occurred while calling the LLM: {e}")
